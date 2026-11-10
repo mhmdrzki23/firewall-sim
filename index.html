@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Simulasi Hirarki Firewall</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#eef1f5;--surface:#fff;--ink:#18202b;--muted:#5b6675;--line:#d5dbe4;--node:#f6f8fb;
+  --accent:#2b5fd9;--ok:#12805c;--okbg:#dff3ea;--no:#c8302e;--nobg:#fbe3e1;
+  --sans:"Figtree",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --mono:"JetBrains Mono",ui-monospace,Menlo,Consolas,monospace;
+  box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#0f141b;--surface:#171e28;--ink:#e6ebf2;--muted:#93a0b3;--line:#2a3443;--node:#1d2531;
+  --accent:#6f95f5;--ok:#4cc79a;--okbg:#133329;--no:#ff7b78;--nobg:#3a1a1a;}}
+:root[data-theme="dark"]{
+  --bg:#0f141b;--surface:#171e28;--ink:#e6ebf2;--muted:#93a0b3;--line:#2a3443;--node:#1d2531;
+  --accent:#6f95f5;--ok:#4cc79a;--okbg:#133329;--no:#ff7b78;--nobg:#3a1a1a;}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*,*::before,*::after{box-sizing:inherit}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 var(--sans)}
+.wrap{max-width:1180px;margin:0 auto;padding:24px 16px 40px}
+h1{font-size:1.75rem;line-height:1.15;margin:0 0 4px;letter-spacing:-.02em}
+h2{font-size:1rem;margin:0 0 12px}
+.sub{color:var(--muted);margin:0 0 20px;max-width:62ch}
+.grid{display:grid;gap:16px;grid-template-columns:minmax(0,1.5fr) minmax(0,1fr);align-items:start}
+.col{display:grid;gap:16px;min-width:0}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:16px}
+@media (max-width:860px){.grid{grid-template-columns:minmax(0,1fr)}.right{order:-1}}
+/* topologi */
+.topo{overflow-x:auto}
+svg{display:block;width:100%;min-width:560px;height:auto}
+.edge{stroke:var(--line);stroke-width:2;fill:none}
+.edge.on{stroke:var(--accent);stroke-width:3}
+.edge.on.deny{stroke:var(--no)}
+.node rect{fill:var(--node);stroke:var(--line);stroke-width:1.5}
+.node.fw rect{stroke:var(--muted);stroke-width:2.5}
+.node text{fill:var(--ink);font:600 13px var(--sans);text-anchor:middle}
+.node .cidr{fill:var(--muted);font:400 11px var(--mono)}
+.node.visit rect{stroke:var(--accent);stroke-width:3}
+.node.allow rect{stroke:var(--ok);fill:var(--okbg)}
+.node.deny rect{stroke:var(--no);fill:var(--nobg)}
+#pkt{fill:var(--accent);stroke:var(--surface);stroke-width:3;opacity:0;transition:transform .45s ease}
+#pkt.blocked{fill:var(--no)}
+/* form */
+label{display:block;font-size:.85rem;color:var(--muted);margin-bottom:4px}
+input,select{width:100%;font:inherit;font-family:var(--mono);font-size:.9rem;padding:9px 10px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--ink)}
+input:focus-visible,select:focus-visible,button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px}
+.btn{font:inherit;font-weight:700;border:0;border-radius:6px;padding:10px 14px;background:var(--accent);color:#fff;cursor:pointer;width:100%}
+:root:not([data-theme="light"]) .btn{color:#0f141b}
+.presets{display:grid;gap:6px;margin-top:14px}
+.preset{font:inherit;font-size:.88rem;text-align:left;border:1px solid var(--line);background:transparent;color:var(--ink);border-radius:6px;padding:8px 10px;cursor:pointer}
+.preset:hover{border-color:var(--accent)}
+#err{color:var(--no);font-size:.85rem;min-height:1.2em;margin:8px 0 0}
+/* hasil */
+.verdict{display:inline-block;font-weight:700;padding:6px 12px;border-radius:6px;margin-bottom:10px}
+.verdict.ok{background:var(--okbg);color:var(--ok)}
+.verdict.no{background:var(--nobg);color:var(--no)}
+.meta{font:.85rem var(--mono);color:var(--muted);margin:0 0 10px;overflow-wrap:anywhere}
+.steps{list-style:none;margin:0;padding:0;display:grid;gap:6px}
+.steps li{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap;padding:8px 10px;border:1px solid var(--line);border-radius:6px;font-size:.9rem}
+.badge{font:600 .75rem var(--mono);padding:2px 7px;border-radius:4px}
+.badge.ALLOW{background:var(--okbg);color:var(--ok)}
+.badge.DENY{background:var(--nobg);color:var(--no)}
+.empty{color:var(--muted);margin:0}
+/* rules */
+.fwhead{font-weight:700;margin:14px 0 6px}
+.fwhead:first-of-type{margin-top:0}
+.rule{display:grid;grid-template-columns:auto 2.2rem auto 1fr;gap:8px;align-items:baseline;padding:7px 8px;border:1px solid var(--line);border-radius:6px;margin-bottom:5px;font-size:.82rem}
+.rule.off{opacity:.45}
+.rule.hit{border-color:var(--accent);box-shadow:inset 3px 0 0 var(--accent)}
+.rule input{width:auto;margin:0}
+.rule .m{font-family:var(--mono);overflow-wrap:anywhere}
+.rule .d{grid-column:2/-1;color:var(--muted)}
+.def{font-size:.82rem;color:var(--muted);margin:2px 0 0}
+footer{color:var(--muted);font-size:.85rem;margin-top:20px}
+@media (prefers-reduced-motion:reduce){#pkt{transition:none}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Simulasi hirarki firewall</h1>
+  <p class="sub">Kirim paket dari satu zona ke zona lain. Paket harus lolos semua firewall di jalurnya, dan aturan firewall bisa kamu matikan untuk melihat dampaknya.</p>
+
+  <div class="grid">
+    <div class="col left">
+      <section class="card topo" aria-label="Topologi jaringan">
+        <h2>Topologi</h2>
+        <svg viewBox="0 0 780 400" role="img" aria-label="Pohon jaringan: Internet, FW-Perimeter, DMZ, FW-Internal, LAN-User, LAN-Server">
+          <g id="edges"></g>
+          <g id="nodes"></g>
+          <circle id="pkt" r="9" cx="0" cy="0"></circle>
+        </svg>
+      </section>
+      <section class="card" aria-live="polite">
+        <h2>Hasil</h2>
+        <div id="result"><p class="empty">Pilih skenario di samping atau isi paket sendiri, lalu kirim.</p></div>
+      </section>
+    </div>
+
+    <div class="col right">
+      <section class="card">
+        <h2>Paket</h2>
+        <form id="f" novalidate>
+          <div class="row">
+            <div><label for="src">IP sumber</label><input id="src" value="8.8.8.8" inputmode="decimal" autocomplete="off"></div>
+            <div><label for="dst">IP tujuan</label><input id="dst" value="10.0.1.10" inputmode="decimal" autocomplete="off"></div>
+          </div>
+          <div class="row">
+            <div><label for="proto">Protokol</label>
+              <select id="proto"><option>tcp</option><option>udp</option><option>icmp</option></select></div>
+            <div><label for="port">Port tujuan</label><input id="port" value="443" inputmode="numeric" autocomplete="off"></div>
+          </div>
+          <button class="btn" type="submit">Kirim paket</button>
+          <p id="err" role="alert"></p>
+        </form>
+        <div class="presets" id="presets"></div>
+      </section>
+      <section class="card">
+        <h2>Aturan firewall</h2>
+        <div id="rules"></div>
+      </section>
+    </div>
+  </div>
+  <footer>Ini simulasi untuk belajar. Tidak ada paket nyata yang dikirim.</footer>
+</div>
+
+<script>
+const ALLOW='ALLOW',DENY='DENY';
+const $=id=>document.getElementById(id);
+const ip2n=ip=>{const p=ip.trim().split('.');if(p.length!==4)return null;const n=p.map(x=>/^\d{1,3}$/.test(x)?+x:NaN);if(n.some(x=>!(x>=0&&x<=255)))return null;return((n[0]*256+n[1])*256+n[2])*256+n[3]};
+const inNet=(ip,cidr)=>{const[b,l]=cidr.split('/');const len=+l;if(len===0)return true;const s=2**(32-len);return Math.floor(ip2n(ip)/s)===Math.floor(ip2n(b)/s)};
+const R=(p,a,o)=>Object.assign({p,a,src:'0.0.0.0/0',dst:'0.0.0.0/0',proto:'any',ports:null,d:'',on:true},o);
+
+const N={
+ internet:{id:'internet',name:'Internet',kind:'zone',cidr:'0.0.0.0/0',x:390,y:40,parent:null},
+ fwp:{id:'fwp',name:'FW-Perimeter',kind:'fw',x:390,y:135,parent:'internet',def:DENY,rules:[
+  R(10,DENY,{proto:'tcp',ports:[23],d:'Blok telnet global'}),
+  R(20,ALLOW,{dst:'10.0.1.0/24',proto:'tcp',ports:[80,443],d:'Publik ke web server DMZ'}),
+  R(30,ALLOW,{src:'10.0.1.0/24',dst:'10.0.3.0/24',proto:'tcp',ports:[5432],d:'Web DMZ ke database'}),
+  R(40,ALLOW,{src:'10.0.2.0/24',d:'User internal keluar'}),
+  R(50,ALLOW,{src:'10.0.2.0/24',dst:'10.0.1.0/24',d:'User internal ke DMZ'}),
+  R(60,ALLOW,{src:'10.0.1.0/24',proto:'udp',ports:[53],d:'DNS keluar dari DMZ'})]},
+ dmz:{id:'dmz',name:'DMZ',kind:'zone',cidr:'10.0.1.0/24',x:150,y:240,parent:'fwp'},
+ fwi:{id:'fwi',name:'FW-Internal',kind:'fw',x:600,y:240,parent:'fwp',def:DENY,rules:[
+  R(10,DENY,{src:'10.0.1.0/24',dst:'10.0.2.0/24',d:'DMZ tidak boleh ke LAN-User'}),
+  R(20,ALLOW,{src:'10.0.1.0/24',dst:'10.0.3.0/24',proto:'tcp',ports:[5432],d:'Web DMZ ke database'}),
+  R(30,ALLOW,{src:'10.0.2.0/24',dst:'10.0.3.0/24',proto:'tcp',ports:[22,443],d:'User ke SSH dan HTTPS server'}),
+  R(40,ALLOW,{src:'10.0.2.0/24',d:'User keluar'}),
+  R(50,ALLOW,{src:'10.0.2.0/24',dst:'10.0.1.0/24',d:'User ke DMZ'})]},
+ lanu:{id:'lanu',name:'LAN-User',kind:'zone',cidr:'10.0.2.0/24',x:490,y:345,parent:'fwi'},
+ lans:{id:'lans',name:'LAN-Server',kind:'zone',cidr:'10.0.3.0/24',x:690,y:345,parent:'fwi'}
+};
+Object.values(N).forEach(n=>{n.parent=n.parent?N[n.parent]:null});
+const nodes=Object.values(N),zones=nodes.filter(n=>n.kind==='zone'),fws=nodes.filter(n=>n.kind==='fw');
+
+const PRESETS=[
+ ['Pengunjung membuka web server','8.8.8.8','10.0.1.10','tcp',443],
+ ['Penyerang coba SSH ke web server','203.0.113.5','10.0.1.10','tcp',22],
+ ['Penyerang langsung ke database','203.0.113.5','10.0.3.10','tcp',5432],
+ ['Web server mengakses database','10.0.1.10','10.0.3.10','tcp',5432],
+ ['Web server yang dibobol coba ke laptop user','10.0.1.10','10.0.2.20','tcp',445],
+ ['Karyawan SSH ke app server','10.0.2.20','10.0.3.11','tcp',22],
+ ['Karyawan browsing internet','10.0.2.20','93.184.216.34','tcp',443],
+ ['Telnet ke luar (harus diblok)','10.0.2.20','93.184.216.34','tcp',23]
+];
+
+const zoneOf=ip=>zones.filter(z=>inNet(ip,z.cidr)).sort((a,b)=>+b.cidr.split('/')[1]-+a.cidr.split('/')[1])[0];
+const anc=n=>{const c=[];for(;n;n=n.parent)c.push(n);return c};
+function path(a,b){const up=anc(a),dn=anc(b);const l=up.find(n=>dn.includes(n));return[...up.slice(0,up.indexOf(l)+1),...dn.slice(0,dn.indexOf(l)).reverse()]}
+const matches=(r,p)=>inNet(p.src,r.src)&&inNet(p.dst,r.dst)&&(r.proto==='any'||r.proto===p.proto)&&(!r.ports||r.ports.includes(p.port));
+function evalFw(fw,p){for(const r of[...fw.rules].sort((a,b)=>a.p-b.p))if(r.on&&matches(r,p))return[r.a,r];return[fw.def,null]}
+function simulate(p){
+ const a=zoneOf(p.src),b=zoneOf(p.dst),route=path(a,b),steps=[];let ok=true,blocked=null;
+ for(const n of route){
+  if(n.kind==='zone'){steps.push({node:n});continue}
+  const[action,rule]=evalFw(n,p);steps.push({node:n,action,rule});
+  if(action===DENY){ok=false;blocked=n;break}
+ }
+ return{p,a,b,steps,ok,blocked};
+}
+
+/* gambar topologi */
+const SVGNS='http://www.w3.org/2000/svg';
+const mk=(t,at,par)=>{const e=document.createElementNS(SVGNS,t);for(const k in at)e.setAttribute(k,at[k]);par&&par.appendChild(e);return e};
+nodes.forEach(n=>{if(!n.parent)return;mk('line',{id:'e-'+n.id,class:'edge',x1:n.parent.x,y1:n.parent.y,x2:n.x,y2:n.y},$('edges'))});
+nodes.forEach(n=>{
+ const g=mk('g',{id:'n-'+n.id,class:'node '+n.kind},$('nodes'));
+ mk('rect',{x:n.x-68,y:n.y-24,width:136,height:48,rx:n.kind==='fw'?4:24},g);
+ const t=mk('text',{x:n.x,y:n.kind==='fw'?n.y+5:n.y-2},g);t.textContent=n.name;
+ if(n.kind==='zone'){const c=mk('text',{x:n.x,y:n.y+14,class:'cidr'},g);c.textContent=n.cidr}
+});
+
+/* animasi */
+let timers=[],last=null;
+function play(res,instant){
+ timers.forEach(clearTimeout);timers=[];
+ document.querySelectorAll('.node,.edge').forEach(e=>e.classList.remove('visit','allow','deny','on'));
+ const gap=(instant||matchMedia('(prefers-reduced-motion: reduce)').matches)?0:550,pkt=$('pkt');
+ res.steps.forEach((s,i)=>{
+  const run=()=>{
+   const el=$('n-'+s.node.id);el.classList.add('visit');
+   if(s.action)el.classList.add(s.action===ALLOW?'allow':'deny');
+   if(i>0){const prev=res.steps[i-1].node,child=s.node.parent===prev?s.node:prev,e=$('e-'+child.id);e.classList.add('on');if(s.action===DENY)e.classList.add('deny')}
+   if(i===0){pkt.style.transition='none';pkt.style.transform=`translate(${s.node.x}px,${s.node.y}px)`;pkt.getBoundingClientRect();pkt.style.transition=''}
+   pkt.style.opacity=1;pkt.style.transform=`translate(${s.node.x}px,${s.node.y}px)`;
+   pkt.classList.toggle('blocked',s.action===DENY);
+  };
+  gap?timers.push(setTimeout(run,i*gap)):run();
+ });
+}
+
+/* tampilan */
+const fmtNet=c=>c==='0.0.0.0/0'?'any':c;
+function renderRules(hits=new Set()){
+ $('rules').innerHTML='';
+ fws.forEach(fw=>{
+  const h=document.createElement('div');h.className='fwhead';h.textContent=fw.name;$('rules').appendChild(h);
+  [...fw.rules].sort((a,b)=>a.p-b.p).forEach(r=>{
+   const d=document.createElement('div');d.className='rule'+(r.on?'':' off')+(hits.has(r)?' hit':'');
+   d.innerHTML=`<input type="checkbox" ${r.on?'checked':''} aria-label="Aktifkan aturan ${r.p} di ${fw.name}"><span class="m">#${r.p}</span><span class="badge ${r.a}">${r.a}</span><span class="m">${fmtNet(r.src)} → ${fmtNet(r.dst)} ${r.proto}${r.ports?':'+r.ports.join(','):''}</span><span class="d">${r.d}</span>`;
+   d.querySelector('input').onchange=e=>{r.on=e.target.checked;if(last)run(last.p,true);else renderRules()};
+   $('rules').appendChild(d);
+  });
+  const df=document.createElement('p');df.className='def';df.textContent='Tidak ada yang cocok: '+fw.def;$('rules').appendChild(df);
+ });
+}
+function renderResult(res){
+ const{p,a,b,steps,ok,blocked}=res;
+ const items=steps.map(s=>{
+  if(!s.action)return`<li><strong>${s.node.name}</strong> <span>zona, tidak ada filter</span></li>`;
+  const why=s.rule?`aturan #${s.rule.p}, ${s.rule.d}`:'tidak ada aturan cocok, kebijakan bawaan';
+  return`<li><strong>${s.node.name}</strong><span class="badge ${s.action}">${s.action}</span><span>${why}</span></li>`;
+ }).join('');
+ $('result').innerHTML=`<div class="verdict ${ok?'ok':'no'}">${ok?'Lolos sampai tujuan':'Diblokir di '+blocked.name}</div>
+ <p class="meta">${p.src} → ${p.dst} ${p.proto}${p.proto!=='icmp'&&p.port!=null?':'+p.port:''}<br>${a.name} → ${b.name}</p><ol class="steps">${items}</ol>`;
+ renderRules(new Set(steps.filter(s=>s.rule).map(s=>s.rule)));
+}
+function run(p,instant){last={p};const res=simulate(p);renderResult(res);play(res,instant)}
+
+/* form */
+$('f').addEventListener('submit',e=>{
+ e.preventDefault();
+ const src=$('src').value.trim(),dst=$('dst').value.trim(),proto=$('proto').value,ps=$('port').value.trim();
+ if(ip2n(src)===null||ip2n(dst)===null){$('err').textContent='IP harus berformat seperti 10.0.1.10.';return}
+ let port=null;
+ if(proto!=='icmp'){port=ps===''?null:+ps;if(port!==null&&!(Number.isInteger(port)&&port>=0&&port<=65535)){$('err').textContent='Port harus angka 0 sampai 65535.';return}}
+ $('err').textContent='';run({src,dst,proto,port});
+});
+PRESETS.forEach(([t,s,d,pr,po])=>{
+ const b=document.createElement('button');b.type='button';b.className='preset';b.textContent=t;
+ b.onclick=()=>{$('src').value=s;$('dst').value=d;$('proto').value=pr;$('port').value=po;$('err').textContent='';run({src:s,dst:d,proto:pr,port:po})};
+ $('presets').appendChild(b);
+});
+renderRules();
+</script>
+</body>
+</html>
